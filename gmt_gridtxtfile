@@ -1,0 +1,88 @@
+#!/bin/bash
+
+# $1 input txtfile
+# $2 region selected
+# $3 unit
+# $4 value range reset
+# $5 cpt settings
+# $6 grid spacing
+# $7 colorbar increment
+
+
+input=$1
+out=${1%.*}
+region=$2
+unit=$3
+out=${out##*/}
+
+rng_val=($(gmt info -T0.001+c0 $input | sed -e 's/\// /g' -e 's/-T//g'))
+echo ...data range is ${rng_val[0]}~${rng_val[1]}
+
+rng_val_sel=($(echo $region | sed -e 's/\// /g' -e 's/g//g'))
+ginc1=`echo  ${rng_val_sel[0]} ${rng_val_sel[1]} | awk '{printf("%d",($2-$1))}'`
+echo ...data set to ${rng_val_sel[0]}~${rng_val_sel[1]}
+
+rng_val=($(gmt info -T0.001+c1 $input | sed -e 's/\// /g' -e 's/-T//g'))
+echo ...data range is ${rng_val[0]}~${rng_val[1]}
+ginc2=`echo  ${rng_val_sel[2]} ${rng_val_sel[3]} | awk '{printf("%.2f",($2-$1))}'`
+echo ...data set to ${rng_val_sel[2]}~${rng_val_sel[3]}
+
+ginc_scal=`echo  ${ginc1} ${ginc2} | awk '{printf("%.2f",($2/$1))}'`
+
+rng_val=($(gmt info -T0.001+c2 $input | sed -e 's/\// /g' -e 's/-T//g'))
+echo ...data range is ${rng_val[0]}~${rng_val[1]}
+
+if [[ $4 != '' ]] ; then
+        rng_val=$4
+        rng_val=(${rng_val//\// })
+fi
+echo ...data range reset to ${rng_val[0]}~${rng_val[1]}
+
+cptset=$5
+echo $cptset
+gmt makecpt  -T${rng_val[0]}/${rng_val[1]}/${rng_val[2]} $cptset > mycpt.cpt
+
+ginc=5
+binc=`echo ${rng_val[2]} | awk '{print $1*50}' ` 
+
+if [[ $6 != '' ]] ; then
+    ginc=$6
+fi
+echo ...grid inc is $ginc
+
+if [[ $7 != '' ]] ; then
+    binc=$7
+fi
+echo ...colorbar inc is $binc
+
+plength=6
+pwidth=`echo  $plength $ginc_scal | awk '{printf("%.2f",($2*$1))}'`
+J=X${plength}c/${pwidth}c
+echo ...J is $J
+B=WSne 
+echo ...B is $B
+
+gmt begin $out png E600
+    gmt set FONT_ANNOT_PRIMARY 6p,0,black
+    gmt set MAP_FRAME_TYPE FANCY
+    gmt set MAP_FRAME_PEN 0.1p,black
+    gmt set MAP_FRAME_WIDTH 0.05c
+    gmt set MAP_LABEL_OFFSET auto
+    gmt set MAP_ANNOT_OFFSET_PRIMARY auto
+    gmt set MAP_TICK_LENGTH_PRIMARY 0.02c
+    gmt set MAP_TICK_PEN_PRIMARY 0.1p
+    gmt set MAP_GRID_PEN_PRIMARY 0.01c
+    gmt set MAP_DEFAULT_PEN 0.1p,black
+
+    gmt basemap -R$region -J${J} -Bxa5f5 -Bya5f5 -B$B 
+    gmt surface $input -G${out}.nc+oa  -R$region -I${ginc}/${ginc}
+    if [ -f "${out}.nc2" ]; then
+        echo using existing ncfile ${out}.nc2 
+        gmt grdimage ${out}.nc2 -Cmycpt.cpt
+    else
+        gmt grdimage ${out}.nc -Cmycpt.cpt
+    fi
+
+    gmt coast -R$region -J${J} -Bwsen -Wthinnest -Di -W0.01p,darkbrown -A1000
+    gmt colorbar -Ba${binc}f${binc} -DjBR+o-1c/0c+ml -By+l"$unit" -Cmycpt.cpt
+gmt end
